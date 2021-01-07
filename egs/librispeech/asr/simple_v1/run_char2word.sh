@@ -7,23 +7,24 @@
 
 set -eou pipefail
 
-stage=1
+export CUDA_VISIBLE_DEVICES=0
+
+stage=6
 
 if [ $stage -le 1 ]; then
   local/download_lm.sh "openslr.magicdatatech.com/resources/11" data/local/lm
 fi
 
 if [ $stage -le 2 ]; then
-  local/prepare_dict.sh data/local/lm data/local/dict_nosp
+  local/prepare_dict_char.sh data/local/lm data/local/dict_char_nosp
 fi
 
 if [ $stage -le 3 ]; then
-  local/prepare_lang.sh \
-    --position-dependent-phones false \
-    data/local/dict_nosp \
+  local/prepare_lang_char.sh \
+    data/local/dict_char_nosp \
     "<UNK>" \
-    data/local/lang_tmp_nosp \
-    data/lang_nosp
+    data/local/lang_char_tmp_nosp \
+    data/lang_char_nosp
 
   echo "To load L:"
   echo "    Lfst = k2.Fsa.from_openfst(<string of data/lang_nosp/L.fst.txt>, acceptor=False)"
@@ -32,7 +33,7 @@ fi
 if [ $stage -le 4 ]; then
   # Build G
   local/arpa2fst.py data/local/lm/lm_tgmed.arpa |
-    local/sym2int.pl -f 3 data/lang_nosp/words.txt >data/lang_nosp/G.fsa.txt
+    local/sym2int.pl -f 3 data/lang_char_nosp/words.txt >data/lang_char_nosp/G.fsa.txt
 
   echo "To load G:"
   echo "    Gfsa = k2.Fsa.from_openfst(<string of data/lang_nosp/G.fsa.txt>, acceptor=True)"
@@ -43,9 +44,10 @@ if [ $stage -le 5 ]; then
 fi
 
 if [ $stage -le 6 ]; then
-  python3 ./train.py
+  python3 ./train_char2word.py
 fi
 
 if [ $stage -le 7 ]; then
-  python3 ./decode.py
+  python3 ./decode_char2word.py
 fi
+

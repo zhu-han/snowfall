@@ -130,11 +130,11 @@ def find_first_disambig_symbol(symbols: SymbolTable) -> int:
 
 
 def main():
-    exp_dir = Path('exp-lstm-adam')
+    exp_dir = Path('exp-lstm-adam-ctc-char2word')
     setup_logger('{}/log/log-decode'.format(exp_dir), log_level='debug')
 
     # load L, G, symbol_table
-    lang_dir = Path('data/lang_nosp')
+    lang_dir = Path('data/lang_char_nosp')
     symbol_table = k2.SymbolTable.from_file(lang_dir / 'words.txt')
     phone_symbol_table = k2.SymbolTable.from_file(lang_dir / 'phones.txt')
     ctc_topo = build_ctc_topo(list(phone_symbol_table._id2sym.keys()))
@@ -182,7 +182,7 @@ def main():
     # device = torch.device('cuda', 1)
     device = torch.device('cuda')
     model = TdnnLstm1b(num_features=40, num_classes=len(phone_symbol_table))
-    checkpoint = os.path.join(exp_dir, 'epoch-7.pt')
+    checkpoint = os.path.join(exp_dir, 'epoch-10.pt')
     load_checkpoint(checkpoint, model)
     model.to(device)
     model.eval()

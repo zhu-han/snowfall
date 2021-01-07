@@ -239,12 +239,12 @@ def describe(model: nn.Module):
 def main():
     fix_random_seed(42)
 
-    exp_dir = 'exp-lstm-adam'
+    exp_dir = 'exp-lstm-adam-ctc-char2word'
     setup_logger('{}/log/log-train'.format(exp_dir))
     tb_writer = SummaryWriter(log_dir=f'{exp_dir}/tensorboard')
 
     # load L, G, symbol_table
-    lang_dir = Path('data/lang_nosp')
+    lang_dir = Path('data/lang_char_nosp')
     phone_symbol_table = k2.SymbolTable.from_file(lang_dir / 'phones.txt')
     word_symbol_table = k2.SymbolTable.from_file(lang_dir / 'words.txt')
 
@@ -300,7 +300,7 @@ def main():
 
     learning_rate = 0.00001
     start_epoch = 0
-    num_epochs = 8
+    num_epochs = 11
     best_objf = np.inf
     best_epoch = start_epoch
     best_model_path = os.path.join(exp_dir, 'best_model.pt')
