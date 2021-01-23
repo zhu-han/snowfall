@@ -125,3 +125,30 @@ def save_training_info(
         f.write('best epoch: {}\n'.format(best_epoch))
 
     logging.info('write training info to {}'.format(filename))
+
+
+def set_deterministic_pytorch(random_seed: int):
+    """Ensures pytorch produces deterministic results depending on the program arguments
+    """
+    # seed setting
+    torch.manual_seed(random_seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # Deterministic for CUDA RNN and LSTM
+    cuda_version = get_cuda_version()
+    if cuda_version == 101:
+        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+    elif cuda_version > 101:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    else:
+        pass
+
+def get_cuda_version():
+    from torch.utils import collect_env
+    cuda_version = collect_env.get_running_cuda_version(
+        collect_env.run).split('.')
+    major, minor = int(cuda_version[0]), int(cuda_version[1])
+    cuda_version = major * 10 + minor
+    return cuda_version
