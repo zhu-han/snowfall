@@ -125,22 +125,27 @@ class LmCtcTrainingGraphCompiler(object):
         ctc_topo = build_ctc_topo(list(phones._id2sym.keys()))
         self.ctc_topo = k2.arc_sort(ctc_topo)
 
-    def compile(self, texts: Iterable[str]) -> k2.Fsa:
+    def compile(self, texts: Iterable[str], intersect_grammer: bool = True) -> k2.Fsa:
         decoding_graphs = k2.create_fsa_vec(
-            [self.compile_one_and_cache(text) for text in texts])
+            [self.compile_one_and_cache(text, intersect_grammer) for text in texts])
 
         # make sure the gradient is not accumulated
         decoding_graphs.requires_grad_(False)
         return decoding_graphs
 
     @lru_cache(maxsize=100000)
-    def compile_one_and_cache(self, text: str) -> k2.Fsa:
+    def compile_one_and_cache(self, text: str, intersect_grammer: bool = True) -> k2.Fsa:
         tokens = (token if token in self.words else self.oov
                   for token in text.split(' '))
         word_ids = [self.words[token] for token in tokens]
 
         fsa = k2.linear_fsa(word_ids)
-        decoding_graph = k2.intersect(fsa, self.G)
+
+        if intersect_grammer:
+          decoding_graph = k2.intersect(fsa, self.G)
+        else:
+          decoding_graph = fsa
+        assert fsa.shape[0] == decoding_graph.shape[0], "ERROR: transcripts fsa length changed after composition with G: {fsa.shape[0]} -> {decoding_graph.shape[0]}. word_id: {word_ids}, tokens: {tokens}"
         decoding_graph = k2.connect(k2.intersect(decoding_graph, self.L_inv)).invert_()
         decoding_graph = k2.arc_sort(decoding_graph)
         decoding_graph = k2.compose(self.ctc_topo, decoding_graph)

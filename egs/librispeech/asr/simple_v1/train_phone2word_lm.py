@@ -99,7 +99,7 @@ def get_objf(batch: Dict,
     # nnet_output is [N, C, T]
     nnet_output = nnet_output.permute(0, 2, 1)  # now nnet_output is [N, T, C]
 
-    decoding_graph = graph_compiler.compile(texts).to(device)
+    decoding_graph = graph_compiler.compile(texts, training).to(device)
 
     # nnet_output2 = nnet_output.clone()
     # blank_bias = -7.0
