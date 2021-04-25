@@ -24,8 +24,7 @@ class Conformer(Transformer):
         d_model (int): attention dimension
         nhead (int): number of head
         dim_feedforward (int): feedforward dimention
-        num_encoder_layers (int): number of encoder layers
-        num_decoder_layers (int): number of decoder layers
+        num_layers (int): number of transformer layers
         dropout (float): dropout rate
         cnn_module_kernel (int): Kernel size of convolution module
         normalize_before (bool): whether to use layer_norm before the first block.
@@ -33,39 +32,40 @@ class Conformer(Transformer):
 
     def __init__(self, num_features: int, num_classes: int, subsampling_factor: int = 4,
                  d_model: int = 256, nhead: int = 4, dim_feedforward: int = 2048,
-                 num_encoder_layers: int = 12, num_decoder_layers: int = 6, 
-                 dropout: float = 0.1, cnn_module_kernel: int = 31, 
+                 num_layers: int = 12, dropout: float = 0.1, cnn_module_kernel: int = 31, 
                  normalize_before: bool = True) -> None:
         super(Conformer, self).__init__(num_features=num_features, num_classes=num_classes, subsampling_factor=subsampling_factor,
                  d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,
-                 num_encoder_layers=num_encoder_layers, num_decoder_layers=num_decoder_layers,
-                 dropout=dropout, normalize_before=normalize_before)
+                 num_layers=num_layers, dropout=dropout, normalize_before=normalize_before)
         
         self.encoder_pos = RelPositionalEncoding(d_model, dropout)
 
         encoder_layer = ConformerEncoderLayer(d_model, nhead, dim_feedforward, dropout, cnn_module_kernel, normalize_before)
-        self.encoder = ConformerEncoder(encoder_layer, num_encoder_layers)
+        self.encoder = ConformerEncoder(encoder_layer, num_layers)
 
-    def encode(self, x: Tensor, supervisions: Optional[Dict] = None) -> Tuple[Tensor, Optional[Tensor]]:
+    def forward(self, x: Tensor, supervisions: Optional[Dict] = None) -> Tensor:
         """
         Args:
             x: Tensor of dimension (batch_size, num_features, input_length).
             supervisions : Supervison in lhotse format, i.e., batch['supervisions']
 
         Returns:
-            Tensor: Predictor tensor of dimension (input_length, batch_size, d_model).
-            Tensor: Mask tensor of dimension (batch_size, input_length)
+            Tensor: After log-softmax tensor of dimension (batch_size, number_of_classes, input_length).
         """
         x = x.permute(0, 2, 1)  # (B, F, T) -> (B, T, F)
 
         x = self.encoder_embed(x)
         x, pos_emb = self.encoder_pos(x)
         x = x.permute(1, 0, 2)  # (B, T, F) -> (T, B, F)
+
         mask = encoder_padding_mask(x.size(0), supervisions)
         mask = mask.to(x.device) if mask != None else None
-        x = self.encoder(x, pos_emb, src_key_padding_mask=mask)  # (T, B, F)
 
-        return x, mask
+        x = self.encoder(x, pos_emb, src_key_padding_mask=mask) # (T, B, F)
+        x = self.encoder_output_layer(x).permute(1, 2, 0)  # (T, B, F) ->(B, F, T)
+        x = nn.functional.log_softmax(x, dim=1)  # (B, F, T)
+
+        return x
 
 
 class ConformerEncoderLayer(nn.Module):

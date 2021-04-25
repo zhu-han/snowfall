@@ -45,7 +45,6 @@ def get_objf(batch: Dict,
              is_training: bool,
              is_update: bool,
              accum_grad: int = 1,
-             att_rate: float = 0.0,
              tb_writer: Optional[SummaryWriter] = None,
              global_batch_idx_train: Optional[int] = None,
              optimizer: Optional[torch.optim.Optimizer] = None):
@@ -60,9 +59,7 @@ def get_objf(batch: Dict,
     grad_context = nullcontext if is_training else torch.no_grad
 
     with grad_context():
-        nnet_output, encoder_memory, memory_mask = model(feature, supervisions)
-        if att_rate != 0.0:
-            att_loss = model.decoder_forward(encoder_memory, memory_mask, supervisions, graph_compiler)
+        nnet_output = model(feature, supervisions)
 
         # nnet_output is [N, C, T]
         nnet_output = nnet_output.permute(0, 2, 1)  # now nnet_output is [N, T, C]
@@ -77,10 +74,7 @@ def get_objf(batch: Dict,
                     global_step=global_batch_idx_train
                 )
 
-        if att_rate != 0.0:
-            loss = (- (1.0 - att_rate) * tot_score + att_rate * att_loss) / (len(texts) * accum_grad)
-        else:
-            loss = (-tot_score) / (len(texts) * accum_grad)
+        loss = (-tot_score) / (len(texts) * accum_grad)
         loss.backward()
         if is_update:
             maybe_log_gradients('train/grad_norms')
@@ -138,7 +132,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
                     graph_compiler: CtcTrainingGraphCompiler,
                     optimizer: torch.optim.Optimizer,
                     accum_grad: int,
-                    att_rate: float,
                     current_epoch: int,
                     tb_writer: SummaryWriter,
                     num_epochs: int,
@@ -153,7 +146,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
         graph_compiler: MMI training graph compiler
         optimizer: Training optimizer
         accum_grad: Number of gradient accumulation
-        att_rate: Attention loss rate, final loss is att_rate * att_loss + (1-att_rate) * other_loss
         current_epoch: current training epoch, for logging only
         tb_writer: tensorboard SummaryWriter
         num_epochs: total number of training epochs, for logging only
@@ -191,7 +183,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
             is_training=True,
             is_update=is_update,
             accum_grad=accum_grad,
-            att_rate=att_rate,
             tb_writer=tb_writer,
             global_batch_idx_train=global_batch_idx_train,
             optimizer=optimizer
@@ -284,11 +275,6 @@ def get_parser():
         default=1,
         help="Number of gradient accumulation.")
     parser.add_argument(
-        '--att-rate',
-        type=float,
-        default=0.0,
-        help="Attention loss rate.")
-    parser.add_argument(
         '--nhead',
         type=int,
         default=4,
@@ -357,11 +343,10 @@ def main():
     num_epochs = args.num_epochs
     max_duration = args.max_duration
     accum_grad = args.accum_grad
-    att_rate = args.att_rate
 
     fix_random_seed(42)
 
-    exp_dir = Path('exp-' + model_type + '-noam-ctc-att-musan-sa')
+    exp_dir = Path('exp-' + model_type + '-noam-ctc-musan-sa')
     setup_logger('{}/log/log-train'.format(exp_dir))
     tb_writer = SummaryWriter(log_dir=f'{exp_dir}/tensorboard') if args.tensorboard else None
 
@@ -490,27 +475,20 @@ def main():
     device_id = 0
     device = torch.device('cuda', device_id)
 
-    if att_rate != 0.0:
-        num_decoder_layers = 6
-    else:
-        num_decoder_layers = 0
-
     if model_type == "transformer":
         model = Transformer(
             num_features=80,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
     else:
         model = Conformer(
             num_features=80,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
 
     model.to(device)
     describe(model)
@@ -551,7 +529,6 @@ def main():
             graph_compiler=graph_compiler,
             optimizer=optimizer,
             accum_grad=accum_grad,
-            att_rate=att_rate,
             current_epoch=epoch,
             tb_writer=tb_writer,
             num_epochs=num_epochs,

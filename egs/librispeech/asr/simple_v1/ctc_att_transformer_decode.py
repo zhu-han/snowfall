@@ -53,7 +53,7 @@ def decode(dataloader: torch.utils.data.DataLoader, model: AcousticModel,
         # at entry, feature is [N, T, C]
         feature = feature.permute(0, 2, 1)  # now feature is [N, C, T]
         with torch.no_grad():
-            nnet_output, _, _ = model(feature, supervisions)
+            nnet_output = model(feature, supervisions)
         # nnet_output is [N, C, T]
         nnet_output = nnet_output.permute(0, 2,
                                           1)  # now nnet_output is [N, T, C]
@@ -117,11 +117,6 @@ def get_parser():
         help="Number of checkpionts to average. Automaticly select "
              "consecutive checkpoints before checkpoint specified by'--epoch'. ")
     parser.add_argument(
-        '--att-rate',
-        type=float,
-        default=0.0,
-        help="Attention loss rate.")
-    parser.add_argument(
         '--nhead',
         type=int,
         default=4,
@@ -141,9 +136,8 @@ def main():
     epoch = args.epoch
     max_duration = args.max_duration
     avg = args.avg
-    att_rate = args.att_rate
 
-    exp_dir = Path('exp-' + model_type + '-noam-ctc-att-musan-sa')
+    exp_dir = Path('exp-' + model_type + '-noam-ctc-musan-sa')
     setup_logger('{}/log/log-decode'.format(exp_dir), log_level='debug')
 
     # load L, G, symbol_table
@@ -160,27 +154,20 @@ def main():
     # device = torch.device('cuda', 1)
     device = torch.device('cuda')
 
-    if att_rate != 0.0:
-        num_decoder_layers = 6
-    else:
-        num_decoder_layers = 0
-
     if model_type == "transformer":
         model = Transformer(
             num_features=80,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
     else:
         model = Conformer(
             num_features=80,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
 
     if avg == 1:
         checkpoint = os.path.join(exp_dir, 'epoch-' + str(epoch - 1) + '.pt')

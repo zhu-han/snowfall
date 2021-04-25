@@ -79,7 +79,6 @@ def get_objf(batch: Dict,
              is_update: bool,
              accum_grad: int = 1,
              den_scale: float = 1.0,
-             att_rate: float = 0.0,
              tb_writer: Optional[SummaryWriter] = None,
              global_batch_idx_train: Optional[int] = None,
              optimizer: Optional[torch.optim.Optimizer] = None):
@@ -103,14 +102,10 @@ def get_objf(batch: Dict,
     # at entry, feature is [N, T, C]
     feature = feature.permute(0, 2, 1)  # now feature is [N, C, T]
     if is_training:
-        nnet_output, encoder_memory, memory_mask = model(feature, supervisions)
-        if att_rate != 0.0:
-            att_loss = model.decoder_forward(encoder_memory, memory_mask, supervisions, graph_compiler)
+        nnet_output = model(feature, supervisions)
     else:
         with torch.no_grad():
-            nnet_output, encoder_memory, memory_mask = model(feature, supervisions)
-            if att_rate != 0.0:
-                att_loss = model.decoder_forward(encoder_memory, memory_mask, supervisions, graph_compiler)
+            nnet_output = model(feature, supervisions)
 
     # nnet_output is [N, C, T]
     nnet_output = nnet_output.permute(0, 2, 1)  # now nnet_output is [N, T, C]
@@ -158,10 +153,7 @@ def get_objf(batch: Dict,
                     global_step=global_batch_idx_train
                 )
 
-        if att_rate != 0.0:
-            loss = (- (1.0 - att_rate) * tot_score + att_rate * att_loss) / (len(texts) * accum_grad)
-        else:
-            loss = (-tot_score) / (len(texts) * accum_grad)
+        loss = (-tot_score) / (len(texts) * accum_grad)
 
         loss.backward()
         if is_update:
@@ -225,7 +217,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
                     optimizer: torch.optim.Optimizer,
                     accum_grad: int,
                     den_scale: float,
-                    att_rate: float,
                     current_epoch: int,
                     tb_writer: SummaryWriter,
                     num_epochs: int,
@@ -242,7 +233,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
         optimizer: Training optimizer
         accum_grad: Number of gradient accumulation
         den_scale: Denominator scale in mmi loss
-        att_rate: Attention loss rate, final loss is att_rate * att_loss + (1-att_rate) * other_loss
         current_epoch: current training epoch, for logging only
         tb_writer: tensorboard SummaryWriter
         num_epochs: total number of training epochs, for logging only
@@ -287,7 +277,6 @@ def train_one_epoch(dataloader: torch.utils.data.DataLoader,
             is_update=is_update,
             accum_grad=accum_grad,
             den_scale=den_scale,
-            att_rate=att_rate,
             tb_writer=tb_writer,
             global_batch_idx_train=global_batch_idx_train,
             optimizer=optimizer
@@ -382,11 +371,6 @@ def get_parser():
         default=1.0,
         help="denominator scale in mmi loss.")
     parser.add_argument(
-        '--att-rate',
-        type=float,
-        default=0.0,
-        help="Attention loss rate.")
-    parser.add_argument(
         '--nhead',
         type=int,
         default=4,
@@ -409,11 +393,10 @@ def main():
     num_epochs = args.num_epochs
     accum_grad = args.accum_grad
     den_scale = args.den_scale
-    att_rate = args.att_rate
 
     fix_random_seed(42)
 
-    exp_dir = Path('exp-' + model_type + '-noam-mmi-att-musan')
+    exp_dir = Path('exp-' + model_type + '-noam-mmi-musan')
     setup_logger('{}/log/log-train'.format(exp_dir))
     tb_writer = SummaryWriter(log_dir=f'{exp_dir}/tensorboard')
 
@@ -455,27 +438,20 @@ def main():
 
     logging.info("About to create model")
 
-    if att_rate != 0.0:
-        num_decoder_layers = 6
-    else:
-        num_decoder_layers = 0
-
     if model_type == "transformer":
         model = Transformer(
             num_features=40,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
     else:
         model = Conformer(
             num_features=40,
             nhead=args.nhead,
             d_model=args.attention_dim,
             num_classes=len(phone_ids) + 1,  # +1 for the blank symbol
-            subsampling_factor=4,
-            num_decoder_layers=num_decoder_layers)
+            subsampling_factor=4)
             
     model.P_scores = nn.Parameter(P.scores.clone(), requires_grad=True)
 
@@ -519,7 +495,6 @@ def main():
             optimizer=optimizer,
             accum_grad=accum_grad,
             den_scale=den_scale,
-            att_rate=att_rate,
             current_epoch=epoch,
             tb_writer=tb_writer,
             num_epochs=num_epochs,
